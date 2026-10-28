@@ -1,0 +1,107 @@
+name: Scanverra Scan
+description: Scan your code for secrets, SAST issues, vulnerable dependencies and IaC misconfigurations with the Scanverra CLI. Code is scanned on the runner; only findings are uploaded.
+author: Scanverra
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  api-key:
+    description: Scanverra API key (store it as a repository secret, e.g. SCANVERRA_API_KEY). The Free plan includes one.
+    required: true
+  path:
+    description: Folder to scan.
+    required: false
+    default: "."
+  fail-on:
+    description: Fail the job when a finding at or above this severity exists (critical, high, medium, low, none).
+    required: false
+    default: high
+  category:
+    description: Comma-separated categories to include (security, dependency, iac, quality). Empty means all.
+    required: false
+    default: ""
+  upload:
+    description: Upload findings to your Scanverra dashboard (file contents are never uploaded).
+    required: false
+    default: "true"
+  sarif:
+    description: "Upload a SARIF report to GitHub code scanning. Needs `security-events: write` permission."
+    required: false
+    default: "true"
+  fail-on-new:
+    description: Fail only when the scan adds a critical/high issue compared with the latest scan of the PR's target branch (the new-code gate). Overrides fail-on. Needs upload.
+    required: false
+    default: "false"
+  cli-version:
+    description: "@scanverra/cli version to run."
+    required: false
+    default: "0"
+
+outputs:
+  sarif-file:
+    description: Path of the SARIF report written by the scan.
+    value: ${{ steps.scan.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    # The CLI downloads Scanverra's signed rules once a day; caching them keeps
+    # repeat runs fast and inside the daily download limit.
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/scanverra
+        key: scanverra-rules-${{ runner.os }}-${{ github.run_id }}
+        restore-keys: scanverra-rules-${{ runner.os }}-
+
+    - id: scan
+      shell: bash
+      env:
+        SCANVERRA_API_KEY: ${{ inputs.api-key }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_CATEGORY: ${{ inputs.category }}
+        INPUT_UPLOAD: ${{ inputs.upload }}
+        INPUT_CLI_VERSION: ${{ inputs.cli-version }}
+        INPUT_FAIL_ON_NEW: ${{ inputs.fail-on-new }}
+      run: |
+        args=(scan "$INPUT_PATH" --fail-on "$INPUT_FAIL_ON" --sarif --output scanverra.sarif)
+        # PR checkouts are detached: name the branch, and compare with the PR's target branch.
+        if [ -n "$GITHUB_HEAD_REF" ]; then args+=(--branch "$GITHUB_HEAD_REF"); fi
+        if [ "$INPUT_FAIL_ON_NEW" = "true" ]; then
+          args+=(--fail-on-new)
+          if [ -n "$GITHUB_BASE_REF" ]; then args+=(--baseline-branch "$GITHUB_BASE_REF"); fi
+        fi
+        if [ -n "$INPUT_CATEGORY" ]; then args+=(--category "$INPUT_CATEGORY"); fi
+        if [ "$INPUT_UPLOAD" != "true" ]; then args+=(--no-upload); fi
+        echo "sarif-file=scanverra.sarif" >> "$GITHUB_OUTPUT"
+        set +e
+        npx --yes "@scanverra/cli@${INPUT_CLI_VERSION}" "${args[@]}"
+        status=$?
+        set -e
+        echo "exit-code=$status" >> "$GITHUB_OUTPUT"
+
+    - if: ${{ always() && inputs.sarif == 'true' && hashFiles('scanverra.sarif') != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: scanverra.sarif
+        category: scanverra
+
+    - if: ${{ steps.scan.outputs.exit-code != '0' }}
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        INPUT_FAIL_ON_NEW: ${{ inputs.fail-on-new }}
+      run: |
+        if [ "$EXIT_CODE" = "1" ] && [ "$INPUT_FAIL_ON_NEW" = "true" ]; then
+          echo "::error::This change adds critical or high issues compared with the target branch (Scanverra new-code gate)."
+        elif [ "$EXIT_CODE" = "1" ]; then
+          echo "::error::Scanverra found issues at or above the fail-on severity."
+        else
+          echo "::error::Scanverra scan did not complete (exit code $EXIT_CODE). Check the API key and plan."
+        fi
+        exit "$EXIT_CODE"
