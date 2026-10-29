@@ -68,7 +68,18 @@ runs:
         INPUT_UPLOAD: ${{ inputs.upload }}
         INPUT_CLI_VERSION: ${{ inputs.cli-version }}
         INPUT_FAIL_ON_NEW: ${{ inputs.fail-on-new }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_TOKEN: ${{ github.token }}
       run: |
+        # Where the PR branched off its target (merge-base), from GitHub's compare API: the
+        # checkout is shallow, so git can't tell. Optional: without it the target's latest scan is used.
+        if [ "$INPUT_FAIL_ON_NEW" = "true" ] && [ -n "$PR_BASE_SHA" ] && [ -n "$PR_HEAD_SHA" ]; then
+          SCANVERRA_BASELINE_COMMIT=$(curl -fsSL --max-time 15 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/compare/$PR_BASE_SHA...$PR_HEAD_SHA" 2>/dev/null \
+            | node -e 'let d="";process.stdin.on("data",(c)=>(d+=c)).on("end",()=>{try{process.stdout.write(JSON.parse(d).merge_base_commit?.sha??"")}catch{}})' || true)
+          export SCANVERRA_BASELINE_COMMIT
+        fi
         args=(scan "$INPUT_PATH" --fail-on "$INPUT_FAIL_ON" --sarif --output scanverra.sarif)
         # PR checkouts are detached: name the branch, and compare with the PR's target branch.
         if [ -n "$GITHUB_HEAD_REF" ]; then args+=(--branch "$GITHUB_HEAD_REF"); fi
@@ -102,6 +113,6 @@ runs:
         elif [ "$EXIT_CODE" = "1" ]; then
           echo "::error::Scanverra found issues at or above the fail-on severity."
         else
-          echo "::error::Scanverra scan did not complete (exit code $EXIT_CODE). Check the API key and plan."
+          echo "::error::Scanverra scan did not complete (exit code $EXIT_CODE): see the log above. Usually the API key or plan, or a vulnerability database that couldn't be reached (rerun the job)."
         fi
         exit "$EXIT_CODE"

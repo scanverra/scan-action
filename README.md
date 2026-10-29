@@ -51,9 +51,10 @@ jobs:
           fail-on-new: true
 ```
 
-- **Pull requests** are compared with the latest scan of their target branch.
+- **Pull requests** are compared with the scan of the commit they branched from (looked up through GitHub's API), else the latest scan of their target branch. Issues fixed on `main` after you branched don't count against your PR.
 - **Pushes to `main`** are compared with the previous scan of `main`. The very first scan has nothing to compare with, so it passes and becomes the baseline.
 - **Fails closed:** if a pull request's target branch has never been scanned, every critical or high issue counts as new, so an unchecked PR can't slip through. Keep the `push` trigger so the target branch always has a scan.
+- **Never passes on missing data:** if a vulnerability database can't be reached (after a retry), the job fails with exit code 2 and says so, instead of reporting "no vulnerable dependencies". Rerun the job.
 
 ## Inputs
 
