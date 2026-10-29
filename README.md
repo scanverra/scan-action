@@ -21,7 +21,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: scanverra/scan-action@v1
         with:
           api-key: ${{ secrets.SCANVERRA_API_KEY }}
@@ -44,7 +44,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: scanverra/scan-action@v1
         with:
           api-key: ${{ secrets.SCANVERRA_API_KEY }}
