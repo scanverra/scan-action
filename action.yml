@@ -30,7 +30,7 @@ inputs:
     required: false
     default: "true"
   fail-on-new:
-    description: Fail only when the scan adds a critical/high issue compared with the latest scan of the PR's target branch (the new-code gate). Overrides fail-on. Needs upload.
+    description: Fail only when the scan adds a critical/high issue compared with the latest scan of the PR's target branch (the new-code gate; on push, the previous scan of the branch). If the target branch has never been scanned, every critical/high issue counts as new. Overrides fail-on. Needs upload.
     required: false
     default: "false"
   cli-version:
@@ -46,13 +46,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
-        node-version: 20
+        node-version: 24
 
     # The CLI downloads Scanverra's signed rules once a day; caching them keeps
     # repeat runs fast and inside the daily download limit.
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: ~/.cache/scanverra
         key: scanverra-rules-${{ runner.os }}-${{ github.run_id }}
@@ -86,7 +86,7 @@ runs:
         echo "exit-code=$status" >> "$GITHUB_OUTPUT"
 
     - if: ${{ always() && inputs.sarif == 'true' && hashFiles('scanverra.sarif') != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: scanverra.sarif
         category: scanverra

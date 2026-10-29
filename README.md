@@ -30,14 +30,30 @@ jobs:
 
 ### Gate pull requests on new issues only
 
-Existing issues on `main` shouldn't block every pull request. With `fail-on-new`, the job fails only when the change introduces a critical or high finding (or a vulnerable dependency) compared with the latest scan of the PR's target branch. Scan the target branch on push so there is a baseline:
+Existing issues on `main` shouldn't block every pull request. With `fail-on-new`, the job fails only when the change introduces a critical or high finding (or a vulnerable dependency) compared with a baseline scan:
 
 ```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  scanverra:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
       - uses: scanverra/scan-action@v1
         with:
           api-key: ${{ secrets.SCANVERRA_API_KEY }}
-          fail-on-new: ${{ github.event_name == 'pull_request' }}
+          fail-on-new: true
 ```
+
+- **Pull requests** are compared with the latest scan of their target branch.
+- **Pushes to `main`** are compared with the previous scan of `main`. The very first scan has nothing to compare with, so it passes and becomes the baseline.
+- **Fails closed:** if a pull request's target branch has never been scanned, every critical or high issue counts as new, so an unchecked PR can't slip through. Keep the `push` trigger so the target branch always has a scan.
 
 ## Inputs
 
@@ -49,7 +65,7 @@ Existing issues on `main` shouldn't block every pull request. With `fail-on-new`
 | `category` | all | Comma-separated: `security`, `dependency`, `iac`, `quality` |
 | `upload` | `true` | Send findings to your Scanverra dashboard |
 | `sarif` | `true` | Upload SARIF to GitHub code scanning (needs `security-events: write`) |
-| `fail-on-new` | `false` | Fail only on issues the change adds compared with the target branch's latest scan (overrides `fail-on`; needs `upload`) |
+| `fail-on-new` | `false` | Fail only on issues the change adds compared with the target branch's latest scan (overrides `fail-on`; needs `upload`). If that branch has never been scanned, every critical/high issue counts as new |
 | `cli-version` | `0` | `@scanverra/cli` version or range |
 
 ## Outputs
