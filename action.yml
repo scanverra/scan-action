@@ -1,5 +1,5 @@
 name: Scanverra Scan
-description: Scan your code for secrets, SAST issues, vulnerable dependencies and IaC misconfigurations with the Scanverra CLI. Code is scanned on the runner; only findings are uploaded.
+description: Find secrets, code vulnerabilities, vulnerable dependencies and IaC issues. Fail PRs only on new critical or high issues.
 author: Scanverra
 branding:
   icon: shield
